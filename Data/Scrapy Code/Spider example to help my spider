@@ -1,0 +1,54 @@
+from scrapy import Spider
+from scrapy import Request
+from tripadvisor.items import TripadvisorItem
+class TripadvisorSpider(Spider):
+    name = 'tripadvisor_spider'
+    allowed_urls = ['www.tripadvisor.com']
+    start_urls = ['https://www.tripadvisor.com/Hotels-g60763-New_York_City_New_York-Hotels.html']
+   
+    def parse(self, response):
+        front = 'https://www.tripadvisor.com/Hotels-g60763-'
+        back = 'New_York_City_New_York-Hotels.html'
+        rpages = int(response.xpath('.//a[@class="pageNum last "]//text()').extract()[0])
+        result_urls = [front + back] + [front + 'oa%d-'%entry +back for entry in map(lambda x: x*30,range(1,rpages)) ]
+        for url in result_urls:
+            yield Request(url, self.parse_page)
+   
+    def parse_page(self, response):
+        #pulled_review = response.xpath('.//*[@id="taplc_hsx_hotel_list_lite_dusty_hotels_combined_sponsored_0"]/div')
+        pulled_review = response.xpath('.//div[@id="taplc_hsx_hotel_list_lite_dusty_hotels_combined_sponsored_0"]')
+        for review in pulled_review:
+            title = review.xpath('.//div[@class="listing_title"]//a[@class="property_title prominent "]//text()').extract_first()
+            display_price = review.xpath('//div[@class="price-wrap"]//text()').extract_first()
+            page_link = response.urljoin(review.xpath('.//div[@class="listing_title"]//@href').extract_first() ) 
+            print('='*20, title,' page_link sucessfull','='*20)
+            yield Request(page_link, self.parse_review, meta={'title':title, 'display_price':display_price})
+    
+    def parse_review(self, response):
+        title = response.meta['title']
+        display_price = response.meta['display_price']
+        rating = response.xpath('.//*[@id="ABOUT_TAB"]//span/text()').extract_first()
+        total_reviews = response.xpath('.//*[@id="ABOUT_TAB"]//span[2]/text()').extract_first() #gives the word 'reviews'
+        walking_grade = response.xpath('//*[@id="LOCATION"]/div[2]/div[1]/span[1]/text()').extract_first()
+        restaurant = response.xpath('//*[@id="LOCATION"]/div[2]/div[2]/span[1]/text()').extract_first()
+        attraction = response.xpath('//*[@id="LOCATION"]/div[2]/div[3]/span[1]/text()').extract_first()
+        address = response.xpath('//*[@id="LOCATION"]/div[3]/div[1]/div[2]/span[2]//text()').extract_first()
+        #Extracting text from class
+        #//*[@id="ABOUT_TAB"]/div/div[1]/div[1]/a/span[1]
+        amenities = response.xpath('.//div[@data-test-target = "amenity_text"]//text()').extract()
+        # test= []
+        # for details in amenities:
+        #     feature = details.xpath('./text()').extract_first()
+        #     test = test.append(feature)
+        item = TripadvisorItem()
+        item['title'] = title
+        item['display_price'] = display_price
+        item['rating'] = rating
+        item['total_reviews'] = total_reviews
+        item['walking_grade'] = walking_grade
+        item['restaurant'] = restaurant
+        item['attraction'] = attraction
+        item['page_link'] = response.url
+        item['amenities'] = amenities
+        item['address'] = address
+        yield item
